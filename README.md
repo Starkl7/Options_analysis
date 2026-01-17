@@ -1,7 +1,7 @@
 Data source - yfinance
 - For historical option chain -
-  Cronjobs have been setup for pulling yfinance option chain data every 15 mins (9:00 - 17:00 24*5) from 19/1/26
-  Script needs a bit more optimization, making an API call for all tickers at once instead of calls seperately for each individual ticker.
+  - Cronjobs have been setup for pulling yfinance option chain data every 15 mins (9:00 - 17:00 24*5) from 19/1/26
+  - Script needs a bit more optimization, making an API call for all tickers at once instead of calls seperately for each individual ticker.
 
 Heston, Merton and Hull-White require parameter calibration to market data. Should be easier once the cronjobs for yfinance are up and running.
 

@@ -33,3 +33,21 @@ For models,
                         sigma   : hist_sigma
                       }
   - Hull-White - Implementation needs to be revised. Originally, should model interest rate as a stochastic process but right now, is similar to Heston model.
+
+# Vol Surface visualizer application on Streamlit:
+
+<img width="1416" height="861" alt="image" src="https://github.com/user-attachments/assets/a77ffdcd-5608-4f25-a7e0-c0e06a22741a" />
+
+<img width="1431" height="868" alt="image" src="https://github.com/user-attachments/assets/89ffc183-3d23-48b8-8927-82bfefe0fc88" />
+
+
+Features:
+- Supports 10 Tickers
+- Allows for visualization of Calls and Puts
+- Historic option chain data has already been stored, which has been used (albeit only snapshots)
+  
+To-do:
+- Need to better handle time (Report Date)
+- Add Heston model as an alternative option to Black Scholes
+- Add visualizations for Greek surfaces too
+- Retry replacing outdated option prices by (bid+ask)/2

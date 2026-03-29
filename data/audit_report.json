@@ -1,0 +1,488 @@
+{
+  "audit_date": "2026-03-28T13:58:38.484877",
+  "backtest_window": {
+    "start": "2026-02-13",
+    "end": "2026-03-27"
+  },
+  "n_trading_days": 28,
+  "tickers": [
+    "AAPL",
+    "MSFT",
+    "GOOGL",
+    "AMZN",
+    "META",
+    "NVDA",
+    "TSLA",
+    "JPM",
+    "V",
+    "DIS"
+  ],
+  "completeness": {
+    "AAPL": {
+      "trading_days_with_data": 28,
+      "total_trading_days": 28,
+      "completeness_pct": 100.0,
+      "avg_snapshots_per_day": 32.0,
+      "expected_per_day": 26
+    },
+    "MSFT": {
+      "trading_days_with_data": 28,
+      "total_trading_days": 28,
+      "completeness_pct": 100.0,
+      "avg_snapshots_per_day": 32.0,
+      "expected_per_day": 26
+    },
+    "GOOGL": {
+      "trading_days_with_data": 28,
+      "total_trading_days": 28,
+      "completeness_pct": 100.0,
+      "avg_snapshots_per_day": 32.1,
+      "expected_per_day": 26
+    },
+    "AMZN": {
+      "trading_days_with_data": 28,
+      "total_trading_days": 28,
+      "completeness_pct": 100.0,
+      "avg_snapshots_per_day": 32.1,
+      "expected_per_day": 26
+    },
+    "META": {
+      "trading_days_with_data": 28,
+      "total_trading_days": 28,
+      "completeness_pct": 100.0,
+      "avg_snapshots_per_day": 32.1,
+      "expected_per_day": 26
+    },
+    "NVDA": {
+      "trading_days_with_data": 28,
+      "total_trading_days": 28,
+      "completeness_pct": 100.0,
+      "avg_snapshots_per_day": 32.1,
+      "expected_per_day": 26
+    },
+    "TSLA": {
+      "trading_days_with_data": 28,
+      "total_trading_days": 28,
+      "completeness_pct": 100.0,
+      "avg_snapshots_per_day": 32.1,
+      "expected_per_day": 26
+    },
+    "JPM": {
+      "trading_days_with_data": 28,
+      "total_trading_days": 28,
+      "completeness_pct": 100.0,
+      "avg_snapshots_per_day": 32.1,
+      "expected_per_day": 26
+    },
+    "V": {
+      "trading_days_with_data": 28,
+      "total_trading_days": 28,
+      "completeness_pct": 100.0,
+      "avg_snapshots_per_day": 32.1,
+      "expected_per_day": 26
+    },
+    "DIS": {
+      "trading_days_with_data": 28,
+      "total_trading_days": 28,
+      "completeness_pct": 100.0,
+      "avg_snapshots_per_day": 32.1,
+      "expected_per_day": 26
+    }
+  },
+  "field_check": {
+    "AAPL": {
+      "columns": [
+        "ask",
+        "bid",
+        "change",
+        "contract_size",
+        "contract_symbol",
+        "currency",
+        "expiry_date",
+        "in_the_money",
+        "last_price",
+        "last_trade_date",
+        "market_iv",
+        "oi",
+        "percentchange",
+        "report_time",
+        "strike",
+        "tte",
+        "type",
+        "volume"
+      ],
+      "missing_expected": [],
+      "extra_fields": [
+        "change",
+        "contract_size",
+        "currency",
+        "expiry_date",
+        "in_the_money",
+        "last_trade_date",
+        "percentchange",
+        "tte"
+      ],
+      "row_count_sample": 2427
+    },
+    "MSFT": {
+      "columns": [
+        "ask",
+        "bid",
+        "change",
+        "contract_size",
+        "contract_symbol",
+        "currency",
+        "expiry_date",
+        "in_the_money",
+        "last_price",
+        "last_trade_date",
+        "market_iv",
+        "oi",
+        "percentchange",
+        "report_time",
+        "strike",
+        "tte",
+        "type",
+        "volume"
+      ],
+      "missing_expected": [],
+      "extra_fields": [
+        "change",
+        "contract_size",
+        "currency",
+        "expiry_date",
+        "in_the_money",
+        "last_trade_date",
+        "percentchange",
+        "tte"
+      ],
+      "row_count_sample": 3072
+    },
+    "GOOGL": {
+      "columns": [
+        "ask",
+        "bid",
+        "change",
+        "contract_size",
+        "contract_symbol",
+        "currency",
+        "expiry_date",
+        "in_the_money",
+        "last_price",
+        "last_trade_date",
+        "market_iv",
+        "oi",
+        "percentchange",
+        "report_time",
+        "strike",
+        "tte",
+        "type",
+        "volume"
+      ],
+      "missing_expected": [],
+      "extra_fields": [
+        "change",
+        "contract_size",
+        "currency",
+        "expiry_date",
+        "in_the_money",
+        "last_trade_date",
+        "percentchange",
+        "tte"
+      ],
+      "row_count_sample": 3270
+    },
+    "AMZN": {
+      "columns": [
+        "ask",
+        "bid",
+        "change",
+        "contract_size",
+        "contract_symbol",
+        "currency",
+        "expiry_date",
+        "in_the_money",
+        "last_price",
+        "last_trade_date",
+        "market_iv",
+        "oi",
+        "percentchange",
+        "report_time",
+        "strike",
+        "tte",
+        "type",
+        "volume"
+      ],
+      "missing_expected": [],
+      "extra_fields": [
+        "change",
+        "contract_size",
+        "currency",
+        "expiry_date",
+        "in_the_money",
+        "last_trade_date",
+        "percentchange",
+        "tte"
+      ],
+      "row_count_sample": 1966
+    },
+    "META": {
+      "columns": [
+        "ask",
+        "bid",
+        "change",
+        "contract_size",
+        "contract_symbol",
+        "currency",
+        "expiry_date",
+        "in_the_money",
+        "last_price",
+        "last_trade_date",
+        "market_iv",
+        "oi",
+        "percentchange",
+        "report_time",
+        "strike",
+        "tte",
+        "type",
+        "volume"
+      ],
+      "missing_expected": [],
+      "extra_fields": [
+        "change",
+        "contract_size",
+        "currency",
+        "expiry_date",
+        "in_the_money",
+        "last_trade_date",
+        "percentchange",
+        "tte"
+      ],
+      "row_count_sample": 5044
+    },
+    "NVDA": {
+      "columns": [
+        "ask",
+        "bid",
+        "change",
+        "contract_size",
+        "contract_symbol",
+        "currency",
+        "expiry_date",
+        "in_the_money",
+        "last_price",
+        "last_trade_date",
+        "market_iv",
+        "oi",
+        "percentchange",
+        "report_time",
+        "strike",
+        "tte",
+        "type",
+        "volume"
+      ],
+      "missing_expected": [],
+      "extra_fields": [
+        "change",
+        "contract_size",
+        "currency",
+        "expiry_date",
+        "in_the_money",
+        "last_trade_date",
+        "percentchange",
+        "tte"
+      ],
+      "row_count_sample": 3901
+    },
+    "TSLA": {
+      "columns": [
+        "ask",
+        "bid",
+        "change",
+        "contract_size",
+        "contract_symbol",
+        "currency",
+        "expiry_date",
+        "in_the_money",
+        "last_price",
+        "last_trade_date",
+        "market_iv",
+        "oi",
+        "percentchange",
+        "report_time",
+        "strike",
+        "tte",
+        "type",
+        "volume"
+      ],
+      "missing_expected": [],
+      "extra_fields": [
+        "change",
+        "contract_size",
+        "currency",
+        "expiry_date",
+        "in_the_money",
+        "last_trade_date",
+        "percentchange",
+        "tte"
+      ],
+      "row_count_sample": 4952
+    },
+    "JPM": {
+      "columns": [
+        "ask",
+        "bid",
+        "change",
+        "contract_size",
+        "contract_symbol",
+        "currency",
+        "expiry_date",
+        "in_the_money",
+        "last_price",
+        "last_trade_date",
+        "market_iv",
+        "oi",
+        "percentchange",
+        "report_time",
+        "strike",
+        "tte",
+        "type",
+        "volume"
+      ],
+      "missing_expected": [],
+      "extra_fields": [
+        "change",
+        "contract_size",
+        "currency",
+        "expiry_date",
+        "in_the_money",
+        "last_trade_date",
+        "percentchange",
+        "tte"
+      ],
+      "row_count_sample": 1587
+    },
+    "V": {
+      "columns": [
+        "ask",
+        "bid",
+        "change",
+        "contract_size",
+        "contract_symbol",
+        "currency",
+        "expiry_date",
+        "in_the_money",
+        "last_price",
+        "last_trade_date",
+        "market_iv",
+        "oi",
+        "percentchange",
+        "report_time",
+        "strike",
+        "tte",
+        "type",
+        "volume"
+      ],
+      "missing_expected": [],
+      "extra_fields": [
+        "change",
+        "contract_size",
+        "currency",
+        "expiry_date",
+        "in_the_money",
+        "last_trade_date",
+        "percentchange",
+        "tte"
+      ],
+      "row_count_sample": 1682
+    },
+    "DIS": {
+      "columns": [
+        "ask",
+        "bid",
+        "change",
+        "contract_size",
+        "contract_symbol",
+        "currency",
+        "expiry_date",
+        "in_the_money",
+        "last_price",
+        "last_trade_date",
+        "market_iv",
+        "oi",
+        "percentchange",
+        "report_time",
+        "strike",
+        "tte",
+        "type",
+        "volume"
+      ],
+      "missing_expected": [],
+      "extra_fields": [
+        "change",
+        "contract_size",
+        "currency",
+        "expiry_date",
+        "in_the_money",
+        "last_trade_date",
+        "percentchange",
+        "tte"
+      ],
+      "row_count_sample": 936
+    }
+  },
+  "volume_semantics": {
+    "AAPL": {
+      "date": "2026-03-27",
+      "n_snapshots": 32,
+      "max_snapshot_volume_sum": 1032490,
+      "sum_of_snapshots_volume": 22216933,
+      "yfinance_daily_volume": null,
+      "ratio_sum_to_daily": null,
+      "likely_cumulative": null
+    },
+    "MSFT": {
+      "date": "2026-03-27",
+      "n_snapshots": 32,
+      "max_snapshot_volume_sum": 1369165,
+      "sum_of_snapshots_volume": 25178588,
+      "yfinance_daily_volume": null,
+      "ratio_sum_to_daily": null,
+      "likely_cumulative": null
+    },
+    "GOOGL": {
+      "date": "2026-03-27",
+      "n_snapshots": 33,
+      "max_snapshot_volume_sum": 517248,
+      "sum_of_snapshots_volume": 11296979,
+      "yfinance_daily_volume": null,
+      "ratio_sum_to_daily": null,
+      "likely_cumulative": null
+    }
+  },
+  "timestamp_alignment": {
+    "ticker": "AAPL",
+    "date": "2026-03-27",
+    "n_option_snapshots": 32,
+    "n_stock_snapshots": 1,
+    "median_lag_sec": NaN,
+    "max_lag_sec": NaN,
+    "pct_within_1min": 0.0
+  },
+  "missing_patterns": {
+    "sparse_tickers": [],
+    "sparse_dates": [],
+    "ticker_completeness_pct": {
+      "AAPL": 100.0,
+      "MSFT": 100.0,
+      "GOOGL": 100.0,
+      "AMZN": 100.0,
+      "META": 100.0,
+      "NVDA": 100.0,
+      "TSLA": 100.0,
+      "JPM": 100.0,
+      "V": 100.0,
+      "DIS": 100.0
+    }
+  }
+}

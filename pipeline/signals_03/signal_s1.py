@@ -131,11 +131,19 @@ def _compute_ticker_s1(
     roll_mean = iv_series.shift(1).rolling(S1_ROLLING_WINDOW, min_periods=S1_ROLLING_WINDOW // 2).mean()
     roll_std  = iv_series.shift(1).rolling(S1_ROLLING_WINDOW, min_periods=S1_ROLLING_WINDOW // 2).std()
 
+    # Floor rolling std at 0.3 % IV absolute to prevent extreme z-scores when IV
+    # is near-constant (roll_std → 0 gives z = ΔIV / 1e-8 → ±thousands).
+    roll_std  = roll_std.clip(lower=3e-3)
+
     df["rolling_mean_iv"] = roll_mean
     df["rolling_std_iv"]  = roll_std
-    df["z_score"] = (df["straddle_iv"] - roll_mean) / (roll_std + 1e-8)
+    df["z_score"] = (df["straddle_iv"] - roll_mean) / roll_std
 
-    # Spread gate: flag if spread > rolling median spread
+    # ── Spread gate ────────────────────────────────────────────────────────
+    # spread_flag = True when current spread > rolling median (wider than usual).
+    # Short straddle: wide spread confirms MM inventory pressure (elevated IV).
+    # Long  straddle: narrow spread (NOT wide) confirms genuinely compressed IV
+    #                 and gives a cheaper entry — use ~spread_flag.
     if "straddle_spread" in df.columns and df["straddle_spread"].notna().any():
         spread_series = df["straddle_spread"].ffill()
         spread_median = spread_series.shift(1).rolling(S1_ROLLING_WINDOW, min_periods=3).median()
@@ -144,8 +152,11 @@ def _compute_ticker_s1(
         df["spread_flag"] = True   # no spread data → gate always open
 
     # ── Signal generation ─────────────────────────────────────────────────
-    sell_signal = (df["z_score"] > S1_ZSCORE_ENTRY) & df["spread_flag"]
-    buy_signal  = pd.Series(False, index=df.index)   # disabled: long straddle has negative gross edge
+    # Short: IV spike (z > +threshold) AND wide spread (confirms elevated premium)
+    # Long : IV compression (z < −threshold) AND narrow spread (confirms low IV,
+    #        cheaper to enter; use ~spread_flag)
+    sell_signal = (df["z_score"] >  S1_ZSCORE_ENTRY) &  df["spread_flag"]
+    buy_signal  = (df["z_score"] < -S1_ZSCORE_ENTRY) & ~df["spread_flag"]
 
     df["direction"] = 0
     df.loc[sell_signal, "direction"] = -1   # -1 = sell straddle (short vol)

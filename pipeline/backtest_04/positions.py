@@ -29,7 +29,7 @@ class OptionLeg:
     tte:         float    # at entry
     option_type: str      # 'c' or 'p'
     quantity:    float    # signed (+1 long, -1 short)
-    entry_price: float    # price transacted (bid or ask)
+    entry_price: float    # mid price at entry (mid-to-mid accounting)
     entry_time:  datetime
     iv_at_entry: float
 
@@ -64,6 +64,42 @@ class StraddlePosition:
     option_pnl:   float = 0.0
     hedge_pnl:    float = 0.0
     cost:         float = 0.0    # total transaction costs paid
+
+    # Spread-sensitive portion of total cost (entry half-spread + exit half-spread + slippage).
+    # Scales linearly with bid-ask spread width; used by spread_sensitivity analysis.
+    # Fixed fees ($1/contract) are excluded — they do not scale with spread.
+    spread_related_cost: float = 0.0
+
+    # Detailed transaction-cost decomposition for auditability
+    cost_entry_spread: float = 0.0
+    cost_exit_spread: float = 0.0
+    cost_slippage: float = 0.0
+    cost_fixed_fees: float = 0.0
+    cost_hedge_impact: float = 0.0
+
+    # ── Entry snapshot (mid / bid / ask per leg) ──────────────────────────
+    ep_call:     float = 0.0   # call mid at entry
+    ep_call_bid: float = 0.0
+    ep_call_ask: float = 0.0
+    ep_put:      float = 0.0   # put mid at entry
+    ep_put_bid:  float = 0.0
+    ep_put_ask:  float = 0.0
+
+    # ── Exit snapshot (populated in close()) ─────────────────────────────
+    xp_call:     float = 0.0   # call mid at exit
+    xp_call_bid: float = 0.0
+    xp_call_ask: float = 0.0
+    xp_put:      float = 0.0   # put mid at exit
+    xp_put_bid:  float = 0.0
+    xp_put_ask:  float = 0.0
+
+    # ── IV at entry ───────────────────────────────────────────────────────
+    iv_computed: float = 0.0   # Jäckel-solved IV (avg call+put, from `iv` column)
+    iv_reported: float = 0.0   # exchange market_iv (avg call+put, from `market_iv` column)
+
+    # ── Signal z-scores ───────────────────────────────────────────────────
+    entry_z: float = 0.0       # S1 z-score that triggered the entry
+    exit_z:  float = 0.0       # S1 z-score at the bar when the trade was closed
 
     exit_time:    Optional[datetime] = None
     exit_reason:  str = ""
@@ -112,7 +148,7 @@ class StraddlePosition:
         Charges half_spread × |quantity change| as transaction cost.
         """
         # Target hedge: offset straddle net delta
-        target_hedge = -new_delta * (abs(self.call_leg.quantity) if self.call_leg else 1)
+        target_hedge = -new_delta
         qty_change   = target_hedge - self.hedge_qty
 
         if abs(qty_change) < 0.01:   # avoid tiny rebalances
@@ -120,40 +156,84 @@ class StraddlePosition:
 
         self.hedge_qty = target_hedge
         self.hedge_entry_price = stock_price
-        self.cost += abs(qty_change) * stock_price * half_spread
+        hedge_c = abs(qty_change) * stock_price * half_spread
+        self.cost += hedge_c
+        self.cost_hedge_impact += hedge_c
         self.bars_since_rebal = 0
 
     def close(
         self,
-        call_mid: float,
-        put_mid: float,
+        call_bid: float,
+        call_ask: float,
+        put_bid: float,
+        put_ask: float,
         stock_price: float,
         timestamp: datetime,
         reason: str,
-        bid_ask_half_spread_opt: float,
-        market_impact_bps: float,
+        fixed_cost_per_contract: float = 1.0,
+        slippage_pct: float = 0.25,
+        exit_half_spread_pct: float = 0.25,
+        market_impact_bps: float = 1.0,
     ) -> None:
         """
-        Close position at current market prices.
-        Buy back shorted options at ask, sell held options at bid.
+        Close position at mid price (mid-to-mid accounting).
+
+        option_pnl reflects the pure mid-to-mid price move; all execution
+        friction is captured explicitly in cost:
+          entry half-spread  : charged at entry (in _enter_straddle)
+          exit half-spread   : exit_half_spread_pct × (ask - bid) per leg, charged here
+          slippage_pct       : fraction of (ask - bid) charged as additional
+                               slippage cost (e.g. 0.25 = 25%)
+          fixed_cost_per_contract : flat fee in dollars (e.g. $1.00)
+
+        spread_related_cost accumulates all spread-proportional costs
+        (entry hs + exit hs + slippage) for use by spread_sensitivity().
+        Fixed fees are excluded as they don't scale with spread width.
+
+        All option P&L is ×CONTRACT_MULTIPLIER (100 shares / contract).
         """
-        # Options closing cost: transact at bid/ask
-        # All option dollar P&L scaled by CONTRACT_MULTIPLIER (100 shares/contract)
-        for leg, current_mid in [(self.call_leg, call_mid), (self.put_leg, put_mid)]:
+        for leg, bid, ask, mid_attr, bid_attr, ask_attr in [
+            (self.call_leg, call_bid, call_ask, "xp_call", "xp_call_bid", "xp_call_ask"),
+            (self.put_leg,  put_bid,  put_ask,  "xp_put",  "xp_put_bid",  "xp_put_ask"),
+        ]:
             if leg is None:
                 continue
-            # If we sold (qty < 0), we buy back at ask = mid + half_spread
-            # If we bought (qty > 0), we sell at bid = mid - half_spread
-            slip = bid_ask_half_spread_opt if leg.quantity < 0 else -bid_ask_half_spread_opt
-            exit_price = current_mid + slip
-            self.option_pnl += leg.quantity * (exit_price - leg.current_price) * CONTRACT_MULTIPLIER
-            self.cost += abs(leg.quantity) * bid_ask_half_spread_opt * CONTRACT_MULTIPLIER
+
+            spread = max(ask - bid, 0.0)
+            mid    = (bid + ask) / 2 if (bid + ask) > 0 else leg.current_price
+
+            # Store exit snapshot
+            setattr(self, mid_attr, mid)
+            setattr(self, bid_attr, bid)
+            setattr(self, ask_attr, ask)
+
+            # P&L: move from last MTM mid to exit mid (pure mid-to-mid)
+            self.option_pnl += leg.quantity * (mid - leg.current_price) * CONTRACT_MULTIPLIER
+
+            # Exit half-spread: explicit friction cost (no longer embedded in option_pnl)
+            half_sp_c = (exit_half_spread_pct * spread) * abs(leg.quantity) * CONTRACT_MULTIPLIER
+            self.cost += half_sp_c
+            self.cost_exit_spread += half_sp_c
+
+            # Additional slippage on top of half-spread
+            slip_c = slippage_pct * spread * abs(leg.quantity) * CONTRACT_MULTIPLIER
+            self.cost += slip_c
+            self.cost_slippage += slip_c
+
+            # Fixed per-contract fee
+            fixed_c = fixed_cost_per_contract * abs(leg.quantity)
+            self.cost += fixed_c
+            self.cost_fixed_fees += fixed_c
+
+            # Spread-sensitive costs (entry hs tracked at entry; exit hs + slippage here)
+            self.spread_related_cost += half_sp_c + slip_c
 
         # Unwind delta hedge
         if self.hedge_qty != 0:
             self.hedge_pnl += self.hedge_qty * (stock_price - self.hedge_entry_price)
             impact_cost = abs(self.hedge_qty) * stock_price * (market_impact_bps / 10_000)
             self.cost += impact_cost
+            self.cost_hedge_impact += impact_cost
 
         self.exit_time   = timestamp
         self.exit_reason = reason

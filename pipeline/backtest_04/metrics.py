@@ -260,7 +260,15 @@ def spread_sensitivity(
 ) -> pd.DataFrame:
     """
     Recompute net P&L assuming 2× and 3× option bid-ask spreads.
-    Assumes cost column represents bid-ask costs (option half-spread × quantity).
+
+    Uses the ``spread_cost`` column (entry half-spread + exit half-spread + exit
+    slippage) recorded per trade.  Fixed per-contract fees are excluded because
+    they do not scale with the bid-ask spread.
+
+    At multiplier m the additional spread penalty vs baseline is:
+        (m − 1) × spread_cost
+    so:
+        pnl_net_adj(m) = pnl_net − (m − 1) × spread_cost
     """
     if multipliers is None:
         multipliers = [1.0, 2.0, 3.0]
@@ -268,7 +276,11 @@ def spread_sensitivity(
     results = []
     for mult in multipliers:
         adj = trade_log.copy()
-        if "cost" in adj.columns and "pnl_gross" in adj.columns:
+        if "spread_cost" in adj.columns and "pnl_net" in adj.columns:
+            # Correct: scale only the spread-sensitive portion
+            adj["pnl_net_adj"] = adj["pnl_net"] - (mult - 1.0) * adj["spread_cost"]
+        elif "cost" in adj.columns and "pnl_gross" in adj.columns:
+            # Fallback for older trade logs without spread_cost column
             adj["pnl_net_adj"] = adj["pnl_gross"] - adj["cost"] * mult
         elif "pnl_net" in adj.columns:
             adj["pnl_net_adj"] = adj["pnl_net"]
@@ -276,9 +288,9 @@ def spread_sensitivity(
             adj["pnl_net_adj"] = 0.0
 
         results.append({
-            "spread_multiplier":  mult,
-            "total_pnl":          float(adj["pnl_net_adj"].sum()),
-            "win_rate":           win_rate(adj["pnl_net_adj"]),
+            "spread_multiplier":   mult,
+            "total_pnl":           float(adj["pnl_net_adj"].sum()),
+            "win_rate":            win_rate(adj["pnl_net_adj"]),
             "n_profitable_trades": int((adj["pnl_net_adj"] > 0).sum()),
         })
 
@@ -288,8 +300,8 @@ def spread_sensitivity(
 # ── Main runner ───────────────────────────────────────────────────────────
 
 def run_metrics(
-    trade_log_path: Path = RESULTS_DIR / "trade_log_net.parquet",
-    daily_pnl_path: Path = RESULTS_DIR / "daily_pnl_net.parquet",
+    trade_log_path: Path = RESULTS_DIR / "trade_log_net_slip25.parquet",
+    daily_pnl_path: Path = RESULTS_DIR / "daily_pnl_net_slip25.parquet",
     portfolio_value: float = 1_000_000,
 ) -> dict:
     from config import INSAMPLE_END

@@ -101,6 +101,10 @@ S1_ZSCORE_EXIT    = 0.5
 S1_MAX_HOLD_BARS  = 4
 S1_MIN_TTE_DAYS   = 14
 S1_MAX_TTE_DAYS   = 30
+S1_SHORT_ONLY     = False        # if True, only take S1 short-straddle entries (direction=-1)
+S1_USE_VIX_OPEN_FILTER = True   # if True, gate S1 direction using VIX open level
+S1_VIX_OPEN_LONG_MAX   = 0.0   # allow long straddle only when vix_open < this
+S1_VIX_OPEN_SHORT_MIN  = 16.0   # allow short straddle only when vix_open > this
 
 # Strategy 2 — Net GEX
 S2_GEX_WINDOW_DAYS    = 20       # trading days for rolling norm
@@ -116,7 +120,24 @@ S4_ZSCORE_THRESHOLD = 1.5
 # ── Backtest / execution ───────────────────────────────────────────────────
 # Transaction costs
 OPTION_SLIPPAGE_HALF_SPREAD = True    # buy at ask, sell at bid
-UNDERLYING_MARKET_IMPACT_BPS = 1.0    # one-way, in basis points
+UNDERLYING_MARKET_IMPACT_BPS = 0.0    # one-way, in basis points
+
+# Option exit transaction costs (round-trip, applied at close)
+# Fixed commission: $1 per option contract (100 shares) per round trip
+FIXED_COST_PER_CONTRACT = 1
+# Fraction of bid-ask spread charged as explicit half-spread at entry/exit.
+# Example: 0.50 = true half-spread, 0.25 = quarter-spread, 0.25 = quarter-spread.
+ENTRY_HALF_SPREAD_PCT = 0.15
+EXIT_HALF_SPREAD_PCT  = 0.15
+# Slippage fraction: charged as slippage_pct × (ask−bid) per contract per round trip
+# Three scenarios: 0.10 (benchmark), 0.25 (poor scenario), 0.50 (market order equivalent)
+SLIPPAGE_SCENARIOS = [0.10, 0.20, 0.40, 0.70]
+SLIPPAGE_PCT = 0.10   # default; override in run_backtest() for sensitivity runs
+
+# Position sizing: fraction of portfolio to deploy per straddle trade.
+# n_contracts = floor(CAPITAL_PER_TRADE_PCT × portfolio_value / straddle_mid_per_contract)
+# minimum 1 contract. Applied equally to long and short straddles.
+CAPITAL_PER_TRADE_PCT = 0.01   # 1 % of portfolio per trade
 
 # Position sizing
 TARGET_DAILY_VOL_PCT  = 0.01          # 1% daily vol per strategy signal

@@ -10,7 +10,7 @@ At each bar:
   5. Compute S2 GEX signal
   6. Compute S1 IV z-score
   7. Opening bars: compute S4 PCR signal
-  8. Execute new entries (bid/ask pricing)
+  8. Execute new entries (mid pricing; half-spread charged to cost)
   9. Rebalance S1 delta hedges (every 2 bars)
   10. Check exit conditions
   11. Mark positions to mid price
@@ -39,9 +39,14 @@ from config import (
     MAX_DAILY_DRAWDOWN_PCT,
     DELTA_REBALANCE_BARS,
     UNDERLYING_MARKET_IMPACT_BPS,
+    FIXED_COST_PER_CONTRACT, SLIPPAGE_PCT,
+    SLIPPAGE_SCENARIOS,
+    ENTRY_HALF_SPREAD_PCT, EXIT_HALF_SPREAD_PCT,
+    CAPITAL_PER_TRADE_PCT,
     S1_ZSCORE_EXIT, S1_MAX_HOLD_BARS,
     S1_MIN_TTE_DAYS, S1_MAX_TTE_DAYS,
-    S1_ZSCORE_ENTRY,
+    S1_ZSCORE_ENTRY, S1_SHORT_ONLY,
+    S1_USE_VIX_OPEN_FILTER, S1_VIX_OPEN_LONG_MAX, S1_VIX_OPEN_SHORT_MIN,
     ATR_LOOKBACK_DAYS, BARS_PER_DAY,
     CONTRACT_MULTIPLIER,
 )
@@ -126,7 +131,9 @@ def run_backtest(
     end: str   = BACKTEST_END,
     tickers: list[str] = TICKERS,
     portfolio_value: float = 1_000_000,
-    gross_pnl_only: bool = False,   # if True, no transaction costs (gross run)
+    gross_pnl_only: bool = False,            # if True, no transaction costs (gross run)
+    slippage_pct: float = SLIPPAGE_PCT,      # fraction of bid-ask spread charged at exit
+    fixed_cost_per_contract: float = FIXED_COST_PER_CONTRACT,  # $1 RT per option contract
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
     Run the event-driven backtest.
@@ -191,9 +198,13 @@ def run_backtest(
         if daily_dd < -MAX_DAILY_DRAWDOWN_PCT * portfolio_value:
             # Close all positions for today
             for ticker in tickers:
-                _force_close_all(open_straddles[ticker], open_directional[ticker],
-                                 ts, "max_daily_drawdown", trade_log,
-                                 stock_df, iv_df, portfolio_value, gross_pnl_only)
+                _force_close_all(
+                    open_straddles[ticker], open_directional[ticker],
+                    ts, "max_daily_drawdown", trade_log,
+                    stock_df, iv_df, gross_pnl_only,
+                    fixed_cost_per_contract=fixed_cost_per_contract,
+                    slippage_pct=slippage_pct,
+                )
             continue
 
         for ticker in tickers:
@@ -206,6 +217,7 @@ def run_backtest(
             r = float(ext_row["rf_rate"].iloc[0]) if not ext_row.empty else 0.04
             q_col = f"div_yield_{ticker}"
             q = float(ext_row[q_col].iloc[0]) if not ext_row.empty and q_col in ext_row.columns else 0.0
+            vix_open = float(ext_row["vix_open"].iloc[0]) if not ext_row.empty and "vix_open" in ext_row.columns else np.nan
 
             rv_row = stock_df[(stock_df["ticker"] == ticker) & (stock_df["timestamp"] == ts)]
             realized_vol = float(rv_row["realized_vol_20d"].iloc[0]) if not rv_row.empty else 0.15
@@ -219,6 +231,18 @@ def run_backtest(
             if not s1_bar.empty:
                 s1_row  = s1_bar.iloc[0]
                 s1_dir  = int(s1_row["direction"])
+
+                # Optional VIX-open directional gate:
+                #   long  only if vix_open < S1_VIX_OPEN_LONG_MAX
+                #   short only if vix_open > S1_VIX_OPEN_SHORT_MIN
+                if S1_USE_VIX_OPEN_FILTER and np.isfinite(vix_open):
+                    if s1_dir == 1 and not (vix_open < S1_VIX_OPEN_LONG_MAX):
+                        s1_dir = 0
+                    elif s1_dir == -1 and not (vix_open > S1_VIX_OPEN_SHORT_MIN):
+                        s1_dir = 0
+
+                if S1_SHORT_ONLY and s1_dir == 1:
+                    s1_dir = 0
                 s1_z    = float(s1_row["z_score"])
                 s1_strike  = float(s1_row["atm_strike"])
                 s1_expiry  = s1_row.get("expiry_date")
@@ -232,6 +256,8 @@ def run_backtest(
                         iv_df=iv_df, greeks_df=greeks_df,
                         portfolio_value=portfolio_value, realized_vol=realized_vol,
                         gross=gross_pnl_only,
+                        entry_half_spread_pct=0.0 if gross_pnl_only else ENTRY_HALF_SPREAD_PCT,
+                        entry_z=s1_z,
                     )
                     if pos:
                         open_straddles[ticker].append(pos)
@@ -302,14 +328,19 @@ def run_backtest(
                     exit_reason = "z_reversion"
 
                 if exit_reason:
-                    call_mid, put_mid = _get_straddle_mids(pos, iv_df, ts)
+                    pos.exit_z = z_now if z_now is not None else 0.0
+                    call_bid, call_ask, put_bid, put_ask = _get_straddle_bids_asks(pos, iv_df, ts)
                     pos.close(
-                        call_mid   = call_mid  or 0,
-                        put_mid    = put_mid   or 0,
+                        call_bid   = call_bid,
+                        call_ask   = call_ask,
+                        put_bid    = put_bid,
+                        put_ask    = put_ask,
                         stock_price = spot,
                         timestamp  = ts,
                         reason     = exit_reason,
-                        bid_ask_half_spread_opt = 0 if gross_pnl_only else 0.002,
+                        fixed_cost_per_contract = 0.0 if gross_pnl_only else fixed_cost_per_contract,
+                        slippage_pct = 0.0 if gross_pnl_only else slippage_pct,
+                        exit_half_spread_pct = 0.0 if gross_pnl_only else EXIT_HALF_SPREAD_PCT,
                         market_impact_bps = 0 if gross_pnl_only else UNDERLYING_MARKET_IMPACT_BPS,
                     )
                     _log_trade(trade_log, pos, "S1")
@@ -372,7 +403,11 @@ def run_backtest(
     trade_df = pd.DataFrame(trade_log)
     daily_df = pd.DataFrame(daily_pnl_records)
 
-    suffix = "_gross" if gross_pnl_only else "_net"
+    if gross_pnl_only:
+        suffix = "_gross"
+    else:
+        slip_tag = f"_slip{int(slippage_pct * 100):02d}"
+        suffix = f"_net{slip_tag}"
     trade_df.to_parquet(RESULTS_DIR / f"trade_log{suffix}.parquet", index=False)
     daily_df.to_parquet(RESULTS_DIR / f"daily_pnl{suffix}.parquet", index=False)
 
@@ -402,8 +437,10 @@ def _can_enter_new(positions: list, ticker: str, max_concurrent: int = 2) -> boo
 def _enter_straddle(
     ticker, ts, atm_strike, expiry, tte, direction, spot,
     iv_df, greeks_df, portfolio_value, realized_vol, gross,
+        entry_half_spread_pct: float,
+    entry_z: float = 0.0,
 ) -> Optional[StraddlePosition]:
-    """Create a StraddlePosition with proper entry pricing."""
+    """Create a StraddlePosition with mid-to-mid entry pricing."""
     opt_bar = iv_df[
         (iv_df["ticker"] == ticker) &
         (iv_df["report_time"] == ts) &
@@ -417,22 +454,30 @@ def _enter_straddle(
     if call_row.empty or put_row.empty:
         return None
 
-    # Entry price: buy at ask, sell at bid
-    if direction == -1:   # selling straddle
-        call_entry = float(call_row["bid"].iloc[0])
-        put_entry  = float(put_row["bid"].iloc[0])
-        qty = -1   # short
-    else:
-        call_entry = float(call_row["ask"].iloc[0])
-        put_entry  = float(put_row["ask"].iloc[0])
-        qty = +1   # long
+    # ── Mid prices (used for both entry fill and sizing) ──────────────────
+    # Mid-to-mid accounting: entry_price = mid; all spread friction goes to cost.
+    call_mid_val = (float(call_row["mid"].iloc[0]) if "mid" in call_row.columns
+                    else (float(call_row["bid"].iloc[0]) + float(call_row["ask"].iloc[0])) / 2)
+    put_mid_val  = (float(put_row["mid"].iloc[0]) if "mid" in put_row.columns
+                    else (float(put_row["bid"].iloc[0]) + float(put_row["ask"].iloc[0])) / 2)
 
-    # Entry cost = half bid-ask spread per leg × 100 shares/contract
-    cost = 0.0 if gross else (
-        (abs(float(call_row["ask"].iloc[0]) - float(call_row["bid"].iloc[0])) / 2 +
-         abs(float(put_row["ask"].iloc[0])  - float(put_row["bid"].iloc[0])) / 2)
-        * CONTRACT_MULTIPLIER
+    call_entry = call_mid_val
+    put_entry  = put_mid_val
+
+    # ── Position sizing: 1 % of portfolio per trade ───────────────────────
+    straddle_mid_dollar = (call_mid_val + put_mid_val) * CONTRACT_MULTIPLIER
+    if straddle_mid_dollar <= 0:
+        return None
+    n_contracts = max(1, int(CAPITAL_PER_TRADE_PCT * portfolio_value / straddle_mid_dollar))
+    qty = -n_contracts if direction == -1 else n_contracts
+
+    # ── Entry spread cost = entry_half_spread_pct × bid-ask spread ───────
+    entry_spread_cost = (
+        (entry_half_spread_pct * abs(float(call_row["ask"].iloc[0]) - float(call_row["bid"].iloc[0])) +
+         entry_half_spread_pct * abs(float(put_row["ask"].iloc[0])  - float(put_row["bid"].iloc[0])))
+        * CONTRACT_MULTIPLIER * n_contracts
     )
+    cost = 0.0 if gross else entry_spread_cost
 
     call_iv = float(call_row["iv"].iloc[0]) if "iv" in call_row.columns else 0.2
     put_iv  = float(put_row["iv"].iloc[0])  if "iv" in put_row.columns  else 0.2
@@ -447,11 +492,32 @@ def _enter_straddle(
     put_leg.current_price  = (float(put_row["mid"].iloc[0])
                               if "mid" in put_row.columns else put_entry)
 
+    # IV snapshots: Jäckel-computed and exchange-reported (avg of call + put)
+    iv_comp = (call_iv + put_iv) / 2
+    call_mkt_iv = float(call_row["market_iv"].iloc[0]) if "market_iv" in call_row.columns else call_iv
+    put_mkt_iv  = float(put_row["market_iv"].iloc[0])  if "market_iv" in put_row.columns  else put_iv
+    iv_rep  = (call_mkt_iv + put_mkt_iv) / 2
+
+    # Entry bid/ask per leg
+    call_bid_val = float(call_row["bid"].iloc[0])
+    call_ask_val = float(call_row["ask"].iloc[0])
+    put_bid_val  = float(put_row["bid"].iloc[0])
+    put_ask_val  = float(put_row["ask"].iloc[0])
+
     pos = StraddlePosition(
         ticker=ticker, entry_time=ts,
         atm_strike=atm_strike, expiry_date=expiry,
         tte_at_entry=tte, direction=direction,
         call_leg=call_leg, put_leg=put_leg, cost=cost,
+        spread_related_cost=0.0 if gross else entry_spread_cost,
+        cost_entry_spread=0.0 if gross else entry_spread_cost,
+        # Entry price snapshot
+        ep_call=call_mid_val, ep_call_bid=call_bid_val, ep_call_ask=call_ask_val,
+        ep_put=put_mid_val,   ep_put_bid=put_bid_val,   ep_put_ask=put_ask_val,
+        # IV snapshot
+        iv_computed=iv_comp, iv_reported=iv_rep,
+        # Z-score at entry
+        entry_z=entry_z,
     )
 
     # Initial delta hedge
@@ -469,6 +535,7 @@ def _enter_straddle(
         pos.hedge_entry_price = spot
         impact_cost = abs(pos.hedge_qty) * spot * UNDERLYING_MARKET_IMPACT_BPS / 10_000
         pos.cost += 0 if gross else impact_cost
+        pos.cost_hedge_impact += 0 if gross else impact_cost
 
     return pos
 
@@ -518,19 +585,83 @@ def _get_straddle_mids(
     return call_mid, put_mid
 
 
+def _get_straddle_bids_asks(
+    pos: StraddlePosition,
+    iv_df: pd.DataFrame,
+    ts: pd.Timestamp,
+) -> tuple[float, float, float, float]:
+    """Return (call_bid, call_ask, put_bid, put_ask) for exit pricing.
+
+    Falls back to mid ± 0 (zero spread) if bid/ask columns are absent,
+    so the caller always receives valid floats.
+    """
+    opt_bar = iv_df[
+        (iv_df["ticker"] == pos.ticker) &
+        (iv_df["report_time"] == ts) &
+        (iv_df["strike"] == pos.atm_strike)
+    ]
+
+    def _get(type_char: str, field: str) -> float:
+        sub = opt_bar[opt_bar["type"] == type_char]
+        if sub.empty or field not in sub.columns:
+            return 0.0
+        v = float(sub.iloc[0][field])
+        return v if np.isfinite(v) else 0.0
+
+    call_bid = _get("c", "bid")
+    call_ask = _get("c", "ask") or call_bid   # if ask missing, use bid (zero spread)
+    put_bid  = _get("p", "bid")
+    put_ask  = _get("p", "ask") or put_bid
+
+    return call_bid, call_ask, put_bid, put_ask
+
+
 def _log_trade(trade_log: list, pos, strategy_id: str) -> None:
     if isinstance(pos, StraddlePosition):
+        n_contracts = abs(pos.call_leg.quantity) if pos.call_leg else 1
         trade_log.append({
-            "strategy":    strategy_id,
-            "ticker":      pos.ticker,
-            "entry_time":  pos.entry_time,
-            "exit_time":   pos.exit_time,
-            "exit_reason": pos.exit_reason,
-            "direction":   pos.direction,
-            "atm_strike":  pos.atm_strike,
-            "pnl_gross":   pos.option_pnl + pos.hedge_pnl,
-            "pnl_net":     pos.total_pnl,
-            "cost":        pos.cost,
+            "strategy":      strategy_id,
+            "ticker":        pos.ticker,
+            "entry_time":    pos.entry_time,
+            "exit_time":     pos.exit_time,
+            "exit_reason":   pos.exit_reason,
+            "side":          "short" if pos.direction == -1 else "long",
+            "direction":     pos.direction,
+            "n_contracts":   n_contracts,
+            "strike_price":  pos.atm_strike,
+            # ── Entry prices ──────────────────────────────────────────────
+            "ep_call":       pos.ep_call,
+            "ep_call_bid":   pos.ep_call_bid,
+            "ep_call_ask":   pos.ep_call_ask,
+            "ep_put":        pos.ep_put,
+            "ep_put_bid":    pos.ep_put_bid,
+            "ep_put_ask":    pos.ep_put_ask,
+            # ── Exit prices ───────────────────────────────────────────────
+            "xp_call":       pos.xp_call,
+            "xp_call_bid":   pos.xp_call_bid,
+            "xp_call_ask":   pos.xp_call_ask,
+            "xp_put":        pos.xp_put,
+            "xp_put_bid":    pos.xp_put_bid,
+            "xp_put_ask":    pos.xp_put_ask,
+            # ── IV at entry ───────────────────────────────────────────────
+            "iv_computed":   pos.iv_computed,
+            "iv_reported":   pos.iv_reported,
+            # ── Signal z-scores ───────────────────────────────────────────
+            "entry_z":       pos.entry_z,
+            "exit_z":        pos.exit_z,
+            # ── P&L decomposition ─────────────────────────────────────────
+            "pnl_gross":     pos.option_pnl + pos.hedge_pnl,
+            "pnl_net":       pos.total_pnl,
+            "cost":          pos.cost,
+            # Spread-sensitive cost component (entry + exit half-spread + exit slippage).
+            # Does NOT include fixed per-contract fees. Used by spread_sensitivity().
+            "spread_cost":   pos.spread_related_cost,
+            # Detailed cost decomposition (S1 only)
+            "cost_entry_spread": pos.cost_entry_spread,
+            "cost_exit_spread":  pos.cost_exit_spread,
+            "cost_slippage":     pos.cost_slippage,
+            "cost_fixed_fees":   pos.cost_fixed_fees,
+            "cost_hedge_impact": pos.cost_hedge_impact,
         })
     else:
         trade_log.append({
@@ -548,13 +679,22 @@ def _log_trade(trade_log: list, pos, strategy_id: str) -> None:
 
 
 def _force_close_all(straddles, directionals, ts, reason, trade_log,
-                      stock_df, iv_df, portfolio_value, gross):
+                      stock_df, iv_df, gross,
+                      fixed_cost_per_contract=FIXED_COST_PER_CONTRACT,
+                      slippage_pct=SLIPPAGE_PCT):
     for pos in straddles:
         if not pos.is_closed:
             spot = _get_spot(stock_df, pos.ticker, ts) or pos.atm_strike
-            call_mid, put_mid = _get_straddle_mids(pos, iv_df, ts)
-            pos.close(call_mid or 0, put_mid or 0, spot, ts, reason,
-                      0 if gross else 0.002, 0 if gross else UNDERLYING_MARKET_IMPACT_BPS)
+            call_bid, call_ask, put_bid, put_ask = _get_straddle_bids_asks(pos, iv_df, ts)
+            pos.close(
+                call_bid=call_bid, call_ask=call_ask,
+                put_bid=put_bid,   put_ask=put_ask,
+                stock_price=spot,  timestamp=ts, reason=reason,
+                fixed_cost_per_contract=0.0 if gross else fixed_cost_per_contract,
+                slippage_pct=0.0 if gross else slippage_pct,
+                exit_half_spread_pct=0.0 if gross else EXIT_HALF_SPREAD_PCT,
+                market_impact_bps=0 if gross else UNDERLYING_MARKET_IMPACT_BPS,
+            )
             _log_trade(trade_log, pos, "S1")
 
     for pos in directionals:
@@ -565,6 +705,9 @@ def _force_close_all(straddles, directionals, ts, reason, trade_log,
 
 
 if __name__ == "__main__":
-    # Run gross first, then net
+    # Gross run (no transaction costs) — baseline
     run_backtest(gross_pnl_only=True)
-    run_backtest(gross_pnl_only=False)
+
+    # Net runs — configurable slippage scenarios from config.py
+    for _slip in SLIPPAGE_SCENARIOS:
+        run_backtest(gross_pnl_only=False, slippage_pct=_slip)

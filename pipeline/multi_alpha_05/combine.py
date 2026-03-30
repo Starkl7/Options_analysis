@@ -60,14 +60,19 @@ def compute_inverse_vol_weights(
         # Compute rolling vol over past `window` days of available history
         history = df[df.index <= rebal_date].tail(window)
 
-        vols = {}
-        for col in strategy_cols:
-            v = history[col].std()
-            vols[col] = max(v, 1e-6)
+        # Only weight strategies that have traded (daily std > $1).
+        # A flat-zero strategy (e.g. S4 before it fires) would otherwise receive
+        # 1/1e-6 = 1M inverse-vol weight and absorb the entire allocation.
+        active_cols = [col for col in strategy_cols
+                       if history[col].std() > 1.0]
+        if not active_cols:          # fallback: if nothing is active, equal-weight all
+            active_cols = strategy_cols
 
-        inv_vols = {col: 1.0 / vols[col] for col in strategy_cols}
+        vols = {col: max(history[col].std(), 1e-6) for col in active_cols}
+        inv_vols = {col: 1.0 / vols[col] for col in active_cols}
         total_inv = sum(inv_vols.values())
-        weights = {col: inv_vols[col] / total_inv for col in strategy_cols}
+        weights = {col: (inv_vols[col] / total_inv if col in active_cols else 0.0)
+                   for col in strategy_cols}
 
         # Check for high inter-strategy correlation → reduce weaker strategy
         if len(strategy_cols) >= 2:
@@ -143,8 +148,8 @@ def run_multi_alpha(
     Combine strategy P&L streams and produce portfolio-level statistics.
 
     Reads from:
-      - results/daily_pnl_net.parquet   (from backtest.py)
-      - results/trade_log_net.parquet
+      - results/daily_pnl_net_slip10.parquet   (from backtest.py, 10% slippage benchmark)
+      - results/trade_log_net_slip10.parquet
 
     Writes:
       - results/daily_pnl_combined.parquet
@@ -153,8 +158,8 @@ def run_multi_alpha(
     """
     print("=== Phase 7: Multi-Alpha Engine ===")
 
-    daily_pnl  = pd.read_parquet(output_dir / "daily_pnl_net.parquet")
-    trade_log  = pd.read_parquet(output_dir / "trade_log_net.parquet")
+    daily_pnl  = pd.read_parquet(output_dir / "daily_pnl_net_slip10.parquet")
+    trade_log  = pd.read_parquet(output_dir / "trade_log_net_slip10.parquet")
 
     daily_pnl["date"] = pd.to_datetime(daily_pnl["date"])
 

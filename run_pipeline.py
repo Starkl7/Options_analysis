@@ -30,7 +30,7 @@ from pathlib import Path
 # Ensure project root is on path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from config import DATA_DIR, RESULTS_DIR, BACKTEST_START, BACKTEST_END, TICKERS, INSAMPLE_END
+from config import DATA_DIR, RESULTS_DIR, BACKTEST_START, BACKTEST_END, TICKERS, INSAMPLE_END, SLIPPAGE_SCENARIOS
 
 
 def phase_0():
@@ -144,13 +144,21 @@ def phase_5():
     from pipeline.backtest_04.backtest import run_backtest
     print("  Running gross backtest …")
     run_backtest(gross_pnl_only=True)
-    print("  Running net backtest …")
-    run_backtest(gross_pnl_only=False)
+    print(f"  Running net backtests ({len(SLIPPAGE_SCENARIOS)} slippage scenarios) …")
+    for slip in SLIPPAGE_SCENARIOS:
+        print(f"    slippage = {int(slip*100)}% of spread …")
+        run_backtest(gross_pnl_only=False, slippage_pct=slip)
 
 
 def phase_6():
     from pipeline.backtest_04.metrics import run_metrics
-    run_metrics()
+    for slip in SLIPPAGE_SCENARIOS:
+        slip_tag = f"slip{int(slip*100):02d}"
+        print(f"\n=== Metrics: net {int(slip*100)}% slippage ===")
+        run_metrics(
+            trade_log_path=RESULTS_DIR / f"trade_log_net_{slip_tag}.parquet",
+            daily_pnl_path=RESULTS_DIR / f"daily_pnl_net_{slip_tag}.parquet",
+        )
 
 
 def phase_7():

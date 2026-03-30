@@ -7,7 +7,7 @@ Fetches:
   - Dividend yields per ticker  (yfinance Ticker.info)
 
 Output: data/external_data.parquet
-  columns: date, vix_close, rf_rate, {TICKER}_div_yield
+    columns: date, vix_open, vix_close, rf_rate, {TICKER}_div_yield
 
 Run:
     python -m pipeline.00_audit.fetch_external
@@ -37,9 +37,12 @@ def _fetch_daily_price(ticker: str, start: str, end: str) -> pd.Series:
 
 
 def fetch_vix(start: str, end: str) -> pd.Series:
-    """Daily VIX close (annualised vol units, e.g. 18.5 = 18.5%)."""
+    """Daily VIX open/close (annualised vol units, e.g. 18.5 = 18.5%)."""
     print("  Fetching VIX …")
-    return _fetch_daily_price(VIX_TICKER, start, end).rename("vix_close")
+    hist = yf.Ticker(VIX_TICKER).history(start=start, end=end, interval="1d", auto_adjust=True)
+    if hist.empty:
+        return pd.DataFrame(columns=["vix_open", "vix_close"])
+    return hist[["Open", "Close"]].rename(columns={"Open": "vix_open", "Close": "vix_close"})
 
 
 def fetch_risk_free_rate(start: str, end: str) -> pd.Series:
@@ -106,6 +109,8 @@ def run_fetch_external(
     combined.to_parquet(output_path, index=False)
 
     print(f"\n  Saved {len(combined)} rows → {output_path}")
+    if "vix_open" in combined.columns:
+        print(f"  VIX open range:  {combined['vix_open'].min():.2f} – {combined['vix_open'].max():.2f}")
     print(f"  VIX range: {combined['vix_close'].min():.2f} – {combined['vix_close'].max():.2f}")
     print(f"  RF range:  {combined['rf_rate'].min():.4f} – {combined['rf_rate'].max():.4f}")
     print(f"  Date range: {combined['date'].min().date()} to {combined['date'].max().date()}")
